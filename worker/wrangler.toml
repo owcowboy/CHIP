@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 # KV namespace — create with: wrangler kv namespace create CHIP_KV
 [[kv_namespaces]]
 binding = "CHIP_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "efc639a1d6d44adfb0b7ef5552ee9740"
 
 # Cron triggers
 [triggers]
