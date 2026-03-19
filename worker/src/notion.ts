@@ -103,7 +103,7 @@ export async function writeDailyLog(
     body: JSON.stringify({
       parent: { database_id: env.NOTION_DAILY_LOG_DB_ID },
       properties: {
-        Date: { date: { start: new Date().toISOString().split('T')[0] } },
+        Date: { title: [{ text: { content: new Date().toISOString().split('T')[0] } }] },
         Summary: { rich_text: [{ text: { content: summary } }] },
         PomodoroCount: { number: pomodoroCount },
         ClaudeInsights: { rich_text: [{ text: { content: insights } }] },
