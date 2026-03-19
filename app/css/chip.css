@@ -665,6 +665,12 @@ body {
   cursor: pointer;
 }
 
+.agent-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .agent-status {
   color: var(--green);
   animation: blink 2s step-end infinite;
