@@ -2,7 +2,7 @@
   "name": "CHIP",
   "short_name": "CHIP",
   "description": "Contextual Hub for Intelligence & Productivity",
-  "start_url": "/",
+  "start_url": "/CHIP/app/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0a0a0a",
