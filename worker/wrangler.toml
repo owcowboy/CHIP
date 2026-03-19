@@ -1,0 +1,26 @@
+name = "chip-worker"
+main = "src/index.ts"
+compatibility_date = "2025-03-19"
+compatibility_flags = ["nodejs_compat"]
+
+# KV namespace — create with: wrangler kv namespace create CHIP_KV
+[[kv_namespaces]]
+binding = "CHIP_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Cron triggers
+[triggers]
+crons = [
+  "30 7 * * *",   # 9h30 Paris (UTC+2 summer) — morning brief
+  "0 11 * * *",   # 13h Paris — check-in mi-journée
+  "0 16 * * *"    # 18h Paris — bilan soir
+]
+
+# Secrets (set via: wrangler secret put SECRET_NAME)
+# ANTHROPIC_API_KEY
+# NOTION_API_KEY
+# NOTION_TASKS_DB_ID
+# NOTION_DAILY_LOG_DB_ID
+# NOTION_CONTEXT_DB_ID
+# TELEGRAM_BOT_TOKEN
+# TELEGRAM_CHAT_ID
