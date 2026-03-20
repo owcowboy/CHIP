@@ -2,7 +2,6 @@
  * CHIP — Main app orchestrator
  * Handles: boot, setup, navigation, PWA install
  */
-
 const ChipApp = (() => {
   const VIEW_LABELS = {
     planning: 'Planning',
@@ -12,32 +11,26 @@ const ChipApp = (() => {
     agent: 'CHIP',
   };
 
-  let currentView = 'planning';
+  let currentView = null;
 
   // ---- Boot sequence ----
   async function boot() {
     const statusEl = document.getElementById('boot-status');
 
-    statusEl.textContent = 'Chargement...';
-    await sleep(500);
-
     // Register service worker
     if ('serviceWorker' in navigator) {
       try {
-        await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.register('/CHIP/sw.js');
         statusEl.textContent = 'Service Worker OK';
-      } catch (e) {
+      } catch {
         statusEl.textContent = 'Mode offline limité';
       }
     }
 
-    await sleep(600);
-
-    const workerUrl = localStorage.getItem('chip_worker_url');
+    const workerUrl = Store.get('workerUrl');
 
     if (!workerUrl) {
       statusEl.textContent = 'Configuration requise';
-      await sleep(400);
       hideBoot();
       showSetup();
       return;
@@ -45,21 +38,15 @@ const ChipApp = (() => {
 
     statusEl.textContent = 'Connexion Worker...';
     const connected = await checkConnection();
+    if (!connected) statusEl.textContent = 'Worker hors ligne';
 
-    await sleep(300);
     hideBoot();
-
-    if (connected) {
-      showApp();
-    } else {
-      // Show app anyway — might be offline
-      showApp();
-    }
+    showApp();
   }
 
   async function checkConnection() {
     try {
-      const data = await window.CHIP_API.health();
+      const data = await API.health();
       setStatusDot(data.status === 'ok' ? 'connected' : 'error');
       return true;
     } catch {
@@ -70,21 +57,22 @@ const ChipApp = (() => {
 
   function hideBoot() {
     const boot = document.getElementById('boot-screen');
-    boot.style.opacity = '0';
-    setTimeout(() => boot.classList.add('hidden'), 500);
+    boot.classList.add('fade-out');
+    setTimeout(() => boot.classList.add('hidden'), 400);
   }
 
   function showSetup() {
     document.getElementById('setup-screen').classList.remove('hidden');
 
-    document.getElementById('save-config').onclick = async () => {
+    document.getElementById('save-config').addEventListener('click', async () => {
       const url = document.getElementById('worker-url').value.trim().replace(/\/$/, '');
       if (!url) return;
 
-      localStorage.setItem('chip_worker_url', url);
+      Store.set('workerUrl', url);
 
       const btn = document.getElementById('save-config');
       btn.textContent = 'Connexion...';
+      btn.disabled = true;
 
       const ok = await checkConnection();
       if (ok) {
@@ -92,46 +80,47 @@ const ChipApp = (() => {
         showApp();
       } else {
         btn.textContent = '✗ Échec — réessaie';
+        btn.disabled = false;
         setTimeout(() => (btn.textContent = 'Connecter CHIP'), 2000);
       }
-    };
+    });
   }
 
   function showApp() {
     document.getElementById('app').classList.remove('hidden');
     initViews();
     initNav();
-    navigate('planning');
+    const lastView = localStorage.getItem('chip_last_view') || 'planning';
+    navigate(lastView);
     showInstallBanner();
   }
 
   // ---- Views ----
   function initViews() {
-    window.PlanningView.init();
-    window.MorningView.init();
-    window.TasksView.init();
-    window.SportView.init();
-    window.AgentView.init();
+    PlanningView.init();
+    MorningView.init();
+    TasksView.init();
+    SportView.init();
+    AgentView.init();
   }
 
   function navigate(viewName) {
     if (currentView === viewName) return;
 
-    // Hide current
-    document.getElementById(`view-${currentView}`)?.classList.remove('active');
-    document.querySelector(`.nav-btn[data-view="${currentView}"]`)?.classList.remove('active');
+    if (currentView) {
+      document.getElementById(`view-${currentView}`)?.classList.remove('active');
+      document.querySelector(`.nav-btn[data-view="${currentView}"]`)?.classList.remove('active');
+    }
 
     currentView = viewName;
+    localStorage.setItem('chip_last_view', viewName);
 
-    // Show new
     document.getElementById(`view-${viewName}`)?.classList.add('active');
     document.querySelector(`.nav-btn[data-view="${viewName}"]`)?.classList.add('active');
     document.getElementById('topbar-title').textContent = VIEW_LABELS[viewName] ?? viewName;
 
-    // Lazy load data when switching to planning
-    if (viewName === 'planning') {
-      window.PlanningView.load();
-    }
+    if (viewName === 'planning') PlanningView.load();
+    if (viewName === 'tasks') TasksView.load();
   }
 
   function initNav() {
@@ -148,31 +137,22 @@ const ChipApp = (() => {
 
     if (isIos && !isInstalled && !dismissed) {
       setTimeout(() => {
-        document.getElementById('install-banner').classList.remove('hidden');
+        document.getElementById('install-banner')?.classList.remove('hidden');
       }, 3000);
-
-      document.getElementById('install-dismiss').onclick = () => {
-        document.getElementById('install-banner').classList.add('hidden');
+      document.getElementById('install-dismiss')?.addEventListener('click', () => {
+        document.getElementById('install-banner')?.classList.add('hidden');
         localStorage.setItem('chip_install_dismissed', '1');
-      };
+      });
     }
   }
 
   // ---- Status dot ----
   function setStatusDot(state) {
     const dot = document.getElementById('status-dot');
-    dot.className = `status-dot ${state}`;
+    if (dot) dot.className = `status-dot ${state}`;
   }
 
-  // ---- Utils ----
-  function sleep(ms) {
-    return new Promise((r) => setTimeout(r, ms));
-  }
-
-  // ---- Start ----
   document.addEventListener('DOMContentLoaded', boot);
 
   return { navigate, setStatusDot, checkConnection };
 })();
-
-window.ChipApp = ChipApp;

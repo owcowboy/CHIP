@@ -104,9 +104,7 @@
           <h2>Routine matin</h2>
         </div>
         <div class="morning-content">
-          <div class="exercise-list" id="exercise-list">
-            <!-- Populated by morning.js -->
-          </div>
+          <div class="exercise-list" id="exercise-list"></div>
           <div class="morning-actions">
             <button class="btn-primary" id="btn-start-sport">▶ Lancer la routine</button>
             <button class="btn-secondary" id="btn-open-playlist">🎵 Playlist</button>
@@ -128,9 +126,7 @@
         <div class="view-header">
           <h2>Exercices</h2>
         </div>
-        <div id="sport-content" class="sport-content">
-          <!-- Populated by sport.js -->
-        </div>
+        <div id="sport-content" class="sport-content"></div>
       </section>
 
       <!-- AGENT VIEW -->
@@ -188,12 +184,13 @@
     <button id="install-dismiss">✕</button>
   </div>
 
-  <script src="js/api.js"></script>
-  <script src="js/views/planning.js"></script>
-  <script src="js/views/morning.js"></script>
-  <script src="js/views/tasks.js"></script>
-  <script src="js/views/sport.js"></script>
-  <script src="js/views/agent.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/store.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/views/planning.js" defer></script>
+  <script src="js/views/morning.js" defer></script>
+  <script src="js/views/tasks.js" defer></script>
+  <script src="js/views/sport.js" defer></script>
+  <script src="js/views/agent.js" defer></script>
+  <script src="js/app.js" defer></script>
 </body>
 </html>

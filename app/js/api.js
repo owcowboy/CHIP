@@ -1,52 +1,66 @@
 /**
  * CHIP API client — fetch wrapper for the Cloudflare Worker
+ * - Reads Worker URL from Store
+ * - 10s timeout via AbortController
+ * - 1 automatic retry on network error (not on 4xx/5xx)
  */
+const API = (() => {
+  const TIMEOUT_MS = 10000;
 
-const API = {
-  get workerUrl() {
-    return localStorage.getItem('chip_worker_url') ?? '';
-  },
+  function getUrl() {
+    return Store.get('workerUrl') || '';
+  }
 
-  async _request(path, options = {}) {
-    const url = this.workerUrl + path;
+  async function _fetchOnce(url, options) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch(url, {
-        headers: { 'Content-Type': 'application/json' },
-        ...options,
-      });
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (err) {
-      console.error('[CHIP API]', path, err);
+      clearTimeout(timer);
       throw err;
     }
-  },
+  }
 
-  async health() {
-    return this._request('/health');
-  },
+  async function _request(path, options = {}) {
+    const url = getUrl() + path;
+    const opts = { headers: { 'Content-Type': 'application/json' }, ...options };
 
-  async getPlanning() {
-    return this._request('/planning', { method: 'POST', body: JSON.stringify({}) });
-  },
+    try {
+      return await _fetchOnce(url, opts);
+    } catch (err) {
+      // Retry once only on network/abort errors, not on HTTP errors
+      if (err.name === 'AbortError' || err.name === 'TypeError') {
+        return await _fetchOnce(url, opts);
+      }
+      throw err;
+    }
+  }
 
-  async completeTask(taskId) {
-    return this._request('/planning', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'complete', taskId }),
-    });
-  },
-
-  async chat(messages) {
-    return this._request('/chat', {
-      method: 'POST',
-      body: JSON.stringify({ messages }),
-    });
-  },
-
-  async triggerMorning() {
-    return this._request('/morning', { method: 'POST' });
-  },
-};
-
-window.CHIP_API = API;
+  return {
+    health() {
+      return _request('/health');
+    },
+    getPlanning() {
+      return _request('/planning', { method: 'POST', body: JSON.stringify({}) });
+    },
+    completeTask(taskId) {
+      return _request('/planning', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'complete', taskId }),
+      });
+    },
+    chat(messages) {
+      return _request('/chat', {
+        method: 'POST',
+        body: JSON.stringify({ messages }),
+      });
+    },
+    triggerMorning() {
+      return _request('/morning', { method: 'POST' });
+    },
+  };
+})();

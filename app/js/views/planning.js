@@ -1,20 +1,35 @@
 /**
  * CHIP — Planning Pomodoro view
- * Loads plan from Worker, renders blocks, manages timer
+ * Loads plan from Worker, renders blocks, manages timer (timestamp-based, no drift)
  */
-
 const PlanningView = (() => {
   let plan = [];
   let activeBlockIndex = -1;
-  let timerInterval = null;
-  let timerSeconds = 25 * 60;
-  let timerTotal = 25 * 60;
+  let timerEnd = null;        // timestamp when current session ends
+  let timerTotal = 25 * 60;  // seconds
   let isBreak = false;
   let isPaused = false;
-  let completedPomodoros = 0;
+  let pausedRemaining = 0;
+  let rafId = null;
 
+  // ---- Utilities ----
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function vibrate() {
+    if (navigator.vibrate) navigator.vibrate(300);
+  }
+
+  // ---- Render ----
   function render(planData) {
     plan = planData;
+    Store.set('tasks', plan.map((b) => ({ id: b.taskId, name: b.taskName, done: b.done, estimatedMinutes: b.estimatedMinutes, priority: b.priority })));
+
     const container = document.getElementById('planning-blocks');
     const loading = document.getElementById('planning-loading');
     const empty = document.getElementById('planning-empty');
@@ -34,10 +49,9 @@ const PlanningView = (() => {
       el.className = `pomodoro-block priority-${block.priority}${block.done ? ' done' : ''}`;
       el.dataset.index = i;
 
-      const tomatoes = Array(block.pomodoroCount)
-        .fill('')
-        .map((_, j) => `<div class="tomato${j < (block.completedPomodoros || 0) ? ' done' : ''}"></div>`)
-        .join('');
+      const tomatoes = Array(block.pomodoroCount).fill('').map((_, j) =>
+        `<div class="tomato${j < (block.completedPomodoros || 0) ? ' done' : ''}"></div>`
+      ).join('');
 
       el.innerHTML = `
         <div class="block-title">${escapeHtml(block.taskName)}</div>
@@ -49,13 +63,11 @@ const PlanningView = (() => {
         <div class="block-actions">
           ${!block.done ? `<button class="btn-start-block" data-index="${i}">▶</button>` : ''}
           ${!block.done ? `<button class="btn-done-block" data-index="${i}">✓</button>` : ''}
-        </div>
-      `;
+        </div>`;
 
       container.appendChild(el);
     });
 
-    // Event delegation
     container.onclick = (e) => {
       const startBtn = e.target.closest('.btn-start-block');
       const doneBtn = e.target.closest('.btn-done-block');
@@ -64,83 +76,76 @@ const PlanningView = (() => {
     };
   }
 
+  // ---- Block actions ----
   function startBlock(index) {
     activeBlockIndex = index;
-    const block = plan[index];
-
-    // Mark active in UI
     document.querySelectorAll('.pomodoro-block').forEach((el, i) => {
       el.classList.toggle('active', i === index);
     });
-
-    showTimer(block.taskName, 25 * 60, false);
+    showTimer(plan[index].taskName, 25 * 60, false);
   }
 
   async function doneBlock(index) {
     const block = plan[index];
     plan[index] = { ...block, done: true };
-
-    // Notify Worker to update Notion
     try {
-      await window.CHIP_API.completeTask(block.taskId);
-    } catch (e) {
-      console.warn('[Planning] Could not sync to Notion:', e);
+      await API.completeTask(block.taskId);
+    } catch {
+      // UI already updated; Notion sync best-effort
     }
-
     stopTimer();
     render(plan);
   }
 
+  // ---- Timer (timestamp-based) ----
   function showTimer(taskName, seconds, breakMode) {
     isBreak = breakMode;
-    timerSeconds = seconds;
     timerTotal = seconds;
     isPaused = false;
+    pausedRemaining = 0;
+    timerEnd = Date.now() + seconds * 1000;
 
     document.getElementById('timer-task-name').textContent = taskName;
     document.getElementById('timer-type').textContent = breakMode ? 'PAUSE' : 'FOCUS';
+    document.getElementById('btn-pause').textContent = '⏸';
     document.getElementById('pomodoro-timer').classList.remove('hidden');
 
-    updateTimerDisplay();
-    startTimerTick();
+    cancelAnimationFrame(rafId);
+    tick();
   }
 
-  function startTimerTick() {
-    clearInterval(timerInterval);
-    timerInterval = setInterval(() => {
-      if (isPaused) return;
-      timerSeconds--;
-      updateTimerDisplay();
+  function tick() {
+    if (isPaused) return;
 
-      if (timerSeconds <= 0) {
-        clearInterval(timerInterval);
-        onTimerEnd();
-      }
-    }, 1000);
+    const remaining = Math.max(0, Math.round((timerEnd - Date.now()) / 1000));
+    updateTimerDisplay(remaining);
+
+    if (remaining <= 0) {
+      onTimerEnd();
+      return;
+    }
+    rafId = requestAnimationFrame(tick);
   }
 
-  function updateTimerDisplay() {
-    const m = Math.floor(timerSeconds / 60).toString().padStart(2, '0');
-    const s = (timerSeconds % 60).toString().padStart(2, '0');
+  function updateTimerDisplay(seconds) {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
     document.getElementById('timer-display').textContent = `${m}:${s}`;
-
-    const pct = ((timerTotal - timerSeconds) / timerTotal) * 100;
+    const elapsed = timerTotal - seconds;
+    const pct = (elapsed / timerTotal) * 100;
     document.getElementById('timer-progress-bar').style.width = `${pct}%`;
   }
 
   function onTimerEnd() {
+    vibrate();
     if (!isBreak) {
-      completedPomodoros++;
-      // Mark one tomato done in the plan
       if (activeBlockIndex >= 0) {
         const block = plan[activeBlockIndex];
         block.completedPomodoros = (block.completedPomodoros || 0) + 1;
         render(plan);
       }
-      // Start 5-min break
       showTimer('Pause', 5 * 60, true);
     } else {
-      // Break over — resume
       stopTimer();
       if (activeBlockIndex >= 0) {
         const block = plan[activeBlockIndex];
@@ -152,55 +157,59 @@ const PlanningView = (() => {
   }
 
   function stopTimer() {
-    clearInterval(timerInterval);
+    cancelAnimationFrame(rafId);
     document.getElementById('pomodoro-timer').classList.add('hidden');
     activeBlockIndex = -1;
+    timerEnd = null;
   }
 
   function initTimerControls() {
-    document.getElementById('btn-pause').onclick = () => {
+    document.getElementById('btn-pause')?.addEventListener('click', () => {
+      if (!timerEnd && !isPaused) return;
       isPaused = !isPaused;
       document.getElementById('btn-pause').textContent = isPaused ? '▶' : '⏸';
-    };
-    document.getElementById('btn-done-task').onclick = () => {
+      if (!isPaused) {
+        // Resume: recompute end time
+        timerEnd = Date.now() + pausedRemaining * 1000;
+        tick();
+      } else {
+        pausedRemaining = Math.max(0, Math.round((timerEnd - Date.now()) / 1000));
+        cancelAnimationFrame(rafId);
+      }
+    });
+
+    document.getElementById('btn-done-task')?.addEventListener('click', () => {
       if (activeBlockIndex >= 0) doneBlock(activeBlockIndex);
-    };
-    document.getElementById('btn-skip').onclick = () => {
+    });
+
+    document.getElementById('btn-skip')?.addEventListener('click', () => {
       stopTimer();
-    };
+    });
   }
 
+  // ---- Load ----
   async function load() {
     const loading = document.getElementById('planning-loading');
+    const empty = document.getElementById('planning-empty');
     loading.classList.remove('hidden');
     document.getElementById('planning-blocks').innerHTML = '';
-    document.getElementById('planning-empty').classList.add('hidden');
+    empty.classList.add('hidden');
 
     try {
-      const data = await window.CHIP_API.getPlanning();
+      const data = await API.getPlanning();
       render(data.plan || []);
-    } catch (e) {
+    } catch {
       loading.classList.add('hidden');
-      document.getElementById('planning-empty').classList.remove('hidden');
-      document.getElementById('planning-empty').querySelector('p').textContent =
-        'Erreur de connexion au Worker.';
+      empty.classList.remove('hidden');
+      const p = empty.querySelector('p');
+      if (p) p.textContent = 'Erreur de connexion au Worker.';
     }
   }
 
   function init() {
     initTimerControls();
-    document.getElementById('btn-refresh-plan').onclick = load;
+    document.getElementById('btn-refresh-plan')?.addEventListener('click', load);
   }
 
   return { init, load };
 })();
-
-window.PlanningView = PlanningView;
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
