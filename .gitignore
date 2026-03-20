@@ -1,0 +1,26 @@
+# Secrets — never commit these
+.env
+.env.local
+.env.*.local
+.dev.vars
+
+# Cloudflare
+.wrangler/
+worker-configuration.d.ts
+
+# Dependencies
+node_modules/
+worker/node_modules/
+
+# Build output
+dist/
+app/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp

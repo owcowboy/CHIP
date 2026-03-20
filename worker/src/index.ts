@@ -1,0 +1,76 @@
+import { handleHealth } from './routes/health';
+import { handlePlanning } from './routes/planning';
+import { handleChat } from './routes/chat';
+import { handleMorning } from './routes/morning';
+
+export interface Env {
+  CHIP_KV: KVNamespace;
+  ANTHROPIC_API_KEY: string;
+  NOTION_API_KEY: string;
+  NOTION_TASKS_DB_ID: string;
+  NOTION_DAILY_LOG_DB_ID: string;
+  NOTION_CONTEXT_DB_ID: string;
+  TELEGRAM_BOT_TOKEN: string;
+  TELEGRAM_CHAT_ID: string;
+}
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: CORS_HEADERS });
+    }
+
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    let response: Response;
+
+    if (path === '/health') {
+      response = await handleHealth();
+    } else if (path === '/planning' && request.method === 'POST') {
+      response = await handlePlanning(request, env);
+    } else if (path === '/chat' && request.method === 'POST') {
+      response = await handleChat(request, env);
+    } else if (path === '/morning' && request.method === 'POST') {
+      response = await handleMorning(env);
+    } else {
+      response = new Response(JSON.stringify({ error: 'Not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Attach CORS headers to every response
+    const newHeaders = new Headers(response.headers);
+    Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
+    return new Response(response.body, {
+      status: response.status,
+      headers: newHeaders,
+    });
+  },
+
+  // Cron triggers
+  async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
+    const hour = new Date(event.scheduledTime).getUTCHours();
+
+    if (hour === 7) {
+      // 9h30 Paris — morning brief
+      await handleMorning(env);
+    } else if (hour === 11) {
+      // 13h Paris — mid-day check-in
+      const { sendTelegram } = await import('./telegram');
+      await sendTelegram(env, '⏱ Check-in mi-journée. Tu en es où ?');
+    } else if (hour === 16) {
+      // 18h Paris — evening wrap
+      const { sendTelegram } = await import('./telegram');
+      await sendTelegram(env, '🌙 Fin de journée. Qu\'est-ce qui a été fait ? Ouvre CHIP pour le bilan.');
+    }
+  },
+};
