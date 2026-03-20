@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="apple-mobile-web-app-title" content="CHIP" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/chip.css" />
+  <title>CHIP</title>
+</head>
+<body>
+
+  <!-- Boot screen -->
+  <div id="boot-screen" class="boot-screen">
+    <div class="boot-logo">
+      <pre class="pixel-art">
+  ██████╗██╗  ██╗██╗██████╗
+ ██╔════╝██║  ██║██║██╔══██╗
+ ██║     ███████║██║██████╔╝
+ ██║     ██╔══██║██║██╔═══╝
+ ╚██████╗██║  ██║██║██║
+  ╚═════╝╚═╝  ╚═╝╚═╝╚═╝
+      </pre>
+      <p class="boot-subtitle">Contextual Hub for Intelligence &amp; Productivity</p>
+      <div class="boot-bar"><div class="boot-bar-fill"></div></div>
+      <p class="boot-status" id="boot-status">Initialisation...</p>
+    </div>
+  </div>
+
+  <!-- Setup screen (first run) -->
+  <div id="setup-screen" class="screen hidden">
+    <div class="screen-header">
+      <span class="chip-badge">CHIP</span>
+      <h1>Configuration</h1>
+    </div>
+    <div class="setup-content">
+      <p class="setup-intro">Pour commencer, j'ai besoin de me connecter à ton Worker CHIP.</p>
+      <div class="field-group">
+        <label for="worker-url">URL du Worker Cloudflare</label>
+        <input type="url" id="worker-url" placeholder="https://chip-worker.ton-user.workers.dev" />
+      </div>
+      <button class="btn-primary" id="save-config">Connecter CHIP</button>
+      <p class="setup-note">Les clés API ne sont jamais stockées ici — elles restent dans ton Worker.</p>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div id="app" class="app hidden">
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <span class="chip-badge">CHIP</span>
+      <span class="topbar-title" id="topbar-title">Planning</span>
+      <div class="topbar-status">
+        <span class="status-dot" id="status-dot"></span>
+      </div>
+    </header>
+
+    <!-- Views -->
+    <main class="main-content">
+
+      <!-- PLANNING VIEW -->
+      <section id="view-planning" class="view active">
+        <div class="view-header">
+          <h2>Planning Pomodoro</h2>
+          <button class="btn-icon" id="btn-refresh-plan" title="Régénérer">⟳</button>
+        </div>
+
+        <div id="planning-loading" class="loading-state hidden">
+          <div class="pixel-spinner"></div>
+          <p>CHIP génère ton planning...</p>
+        </div>
+
+        <div id="planning-empty" class="empty-state hidden">
+          <p>Aucune tâche en attente dans Notion.</p>
+          <button class="btn-secondary" id="btn-add-task">+ Ajouter dans Notion</button>
+        </div>
+
+        <div id="planning-blocks" class="pomodoro-blocks"></div>
+
+        <!-- Active timer -->
+        <div id="pomodoro-timer" class="pomodoro-timer hidden">
+          <div class="timer-task-name" id="timer-task-name">Tâche active</div>
+          <div class="timer-display" id="timer-display">25:00</div>
+          <div class="timer-type" id="timer-type">FOCUS</div>
+          <div class="timer-controls">
+            <button class="btn-timer" id="btn-pause">⏸</button>
+            <button class="btn-timer btn-done" id="btn-done-task">✓ Terminé</button>
+            <button class="btn-timer btn-skip" id="btn-skip">⏭</button>
+          </div>
+          <div class="timer-progress">
+            <div class="timer-progress-bar" id="timer-progress-bar"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MORNING VIEW -->
+      <section id="view-morning" class="view hidden">
+        <div class="view-header">
+          <h2>Routine matin</h2>
+        </div>
+        <div class="morning-content">
+          <div class="exercise-list" id="exercise-list"></div>
+          <div class="morning-actions">
+            <button class="btn-primary" id="btn-start-sport">▶ Lancer la routine</button>
+            <button class="btn-secondary" id="btn-open-playlist">🎵 Playlist</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- TASKS VIEW -->
+      <section id="view-tasks" class="view hidden">
+        <div class="view-header">
+          <h2>Tâches</h2>
+          <span class="task-count" id="task-count">0</span>
+        </div>
+        <div id="task-list" class="task-list"></div>
+      </section>
+
+      <!-- SPORT VIEW -->
+      <section id="view-sport" class="view hidden">
+        <div class="view-header">
+          <h2>Exercices</h2>
+        </div>
+        <div id="sport-content" class="sport-content"></div>
+      </section>
+
+      <!-- AGENT VIEW -->
+      <section id="view-agent" class="view hidden">
+        <div class="view-header">
+          <h2>CHIP Agent</h2>
+          <div class="agent-header-right">
+            <button class="btn-icon" id="btn-clear" title="Effacer l'historique">✕</button>
+            <span class="agent-status" id="agent-status">●</span>
+          </div>
+        </div>
+        <div id="chat-messages" class="chat-messages">
+          <div class="chat-msg chip-msg">
+            <span class="msg-author">CHIP</span>
+            <span class="msg-text">Prêt. Dis-moi ce dont tu as besoin.</span>
+          </div>
+        </div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Message..." autocomplete="off" />
+          <button class="btn-send" id="btn-send">→</button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom nav -->
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-view="planning">
+        <span class="nav-icon">📋</span>
+        <span class="nav-label">Planning</span>
+      </button>
+      <button class="nav-btn" data-view="morning">
+        <span class="nav-icon">🌅</span>
+        <span class="nav-label">Matin</span>
+      </button>
+      <button class="nav-btn" data-view="tasks">
+        <span class="nav-icon">✓</span>
+        <span class="nav-label">Tâches</span>
+      </button>
+      <button class="nav-btn" data-view="sport">
+        <span class="nav-icon">💪</span>
+        <span class="nav-label">Sport</span>
+      </button>
+      <button class="nav-btn" data-view="agent">
+        <span class="nav-icon">◈</span>
+        <span class="nav-label">CHIP</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- Install banner -->
+  <div id="install-banner" class="install-banner hidden">
+    <p>📱 Installe CHIP sur ton iPhone : Safari → <strong>Partager → Sur l'écran d'accueil</strong></p>
+    <button id="install-dismiss">✕</button>
+  </div>
+
+  <script src="js/store.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/views/planning.js" defer></script>
+  <script src="js/views/morning.js" defer></script>
+  <script src="js/views/tasks.js" defer></script>
+  <script src="js/views/sport.js" defer></script>
+  <script src="js/views/agent.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>
