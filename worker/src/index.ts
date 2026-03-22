@@ -2,6 +2,7 @@ import { handleHealth } from './routes/health';
 import { handlePlanning } from './routes/planning';
 import { handleChat } from './routes/chat';
 import { handleMorning } from './routes/morning';
+import { handleTelegramWebhook } from './routes/telegram';
 
 export interface Env {
   CHIP_KV: KVNamespace;
@@ -40,6 +41,8 @@ export default {
       response = await handleChat(request, env);
     } else if (path === '/morning' && request.method === 'POST') {
       response = await handleMorning(env);
+    } else if (path === '/telegram' && request.method === 'POST') {
+      response = await handleTelegramWebhook(request, env);
     } else {
       response = new Response(JSON.stringify({ error: 'Not found' }), {
         status: 404,

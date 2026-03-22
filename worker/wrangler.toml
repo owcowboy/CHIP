@@ -24,3 +24,7 @@ crons = [
 # NOTION_CONTEXT_DB_ID
 # TELEGRAM_BOT_TOKEN
 # TELEGRAM_CHAT_ID
+
+# Setup webhook Telegram (à faire une fois après deploy) :
+# curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<WORKER_URL>/telegram"
+# Vérifier : curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo"
