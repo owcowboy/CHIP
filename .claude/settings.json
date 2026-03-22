@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); cmd=$(echo \"$input\" | jq -r '.tool_input.command // \"\"'); if echo \"$cmd\" | grep -qE 'wrangler deploy|wrangler publish'; then if grep -q 'REPLACE_WITH' worker/wrangler.toml 2>/dev/null; then echo '{\"continue\": false, \"stopReason\": \"BLOQUE: wrangler.toml contient encore des valeurs placeholder (REPLACE_WITH). Remplace-les avant de deployer.\"}'; else echo '{\"continue\": true}'; fi; else echo '{\"continue\": true}'; fi",
+            "statusMessage": "Verification wrangler.toml..."
+          }
+        ]
+      }
+    ]
+  }
+}
