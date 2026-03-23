@@ -67,13 +67,21 @@ export default {
       // 9h30 Paris — morning brief
       await handleMorning(env);
     } else if (hour === 11) {
-      // 13h Paris — mid-day check-in
+      // 13h Paris — check-in mi-journée intelligent
+      const { fetchTasks, fetchContext } = await import('./notion');
+      const { generateCheckIn } = await import('./claude');
       const { sendTelegram } = await import('./telegram');
-      await sendTelegram(env, '⏱ Check-in mi-journée. Tu en es où ?');
+      const [tasks, context] = await Promise.all([fetchTasks(env), fetchContext(env)]);
+      const message = await generateCheckIn(env, tasks, context, 'midday');
+      await sendTelegram(env, message);
     } else if (hour === 16) {
-      // 18h Paris — evening wrap
+      // 18h Paris — bilan soir intelligent
+      const { fetchTasks, fetchContext } = await import('./notion');
+      const { generateCheckIn } = await import('./claude');
       const { sendTelegram } = await import('./telegram');
-      await sendTelegram(env, '🌙 Fin de journée. Qu\'est-ce qui a été fait ? Ouvre CHIP pour le bilan.');
+      const [tasks, context] = await Promise.all([fetchTasks(env), fetchContext(env)]);
+      const message = await generateCheckIn(env, tasks, context, 'evening');
+      await sendTelegram(env, message);
     }
   },
 };

@@ -157,10 +157,11 @@ ${taskList || 'Aucune tâche en cours.'}
 INSTRUCTIONS :
 - Réponds UNIQUEMENT en JSON valide avec cette structure exacte :
   {"message": "ta réponse en français", "actions": [...]}
-- "message" : ta réponse à afficher à l'utilisatrice (français, direct, max 3 phrases)
+- "message" : ta réponse à afficher (français, direct, max 3 phrases — sauf si on te demande un programme/planning, là tu peux être plus long)
 - "actions" : tableau d'actions Notion à exécuter (peut être vide [])
 - Déduis les actions par contexte — si elle mentionne une nouvelle tâche, crée-la ; si une tâche est finie, marque-la done ; si elle donne une info sur elle, mets à jour le contexte ; si elle fait un bilan, écris dans le journal.
 - Pour "mark_done" : utilise l'ID exact de la tâche dans la liste ci-dessus. Si tu ne trouves pas l'ID exact, n'inclus pas l'action.
+- Si elle demande un programme ou planning de la journée : génère un planning Pomodoro structuré dans "message" (max 5 blocs, format lisible Telegram avec émojis 🍅), en te basant sur les tâches disponibles ET celles qu'elle mentionne dans la conversation. Crée dans Notion les tâches qu'elle mentionne qui n'existent pas encore.
 
 Types d'actions disponibles :
 {"type":"create_task","title":"...","priority":1,"estimatedMinutes":25,"project":"..."}
@@ -202,6 +203,42 @@ Types d'actions disponibles :
 
   // Fallback : réponse brute, aucune action
   return { message: raw, actions: [] };
+}
+
+export async function generateCheckIn(
+  env: Env,
+  tasks: NotionTask[],
+  context: Record<string, string>,
+  type: 'midday' | 'evening'
+): Promise<string> {
+  const done = tasks.filter(t => t.status === 'done');
+  const remaining = tasks.filter(t => t.status !== 'done');
+  const next = remaining[0];
+
+  if (type === 'midday') {
+    const system = `Tu es CHIP. Check-in mi-journée, direct et court (max 3 lignes).
+Tu vois les tâches restantes et tu rappelles la prochaine priorité.
+Pose UNE seule question de check-in. Ton direct, pas de fioriture.`;
+
+    const user = `Tâches restantes : ${remaining.slice(0, 5).map(t => t.title).join(', ') || 'aucune'}
+Prochaine priorité : ${next?.title ?? 'rien'}
+Contexte : ${JSON.stringify(context)}
+
+Génère le message de check-in mi-journée pour Telegram.`;
+
+    return callClaude(env, 'claude-haiku-4-5-20251001', system, user, 200);
+  } else {
+    const system = `Tu es CHIP. Bilan de fin de journée, direct (max 4 lignes).
+Tu résumes ce qui a été fait, ce qui reste, et tu poses une question sur demain.
+Ton direct, pas condescendant.`;
+
+    const user = `Tâches restantes aujourd'hui : ${remaining.slice(0, 5).map(t => t.title).join(', ') || 'aucune — bonne journée'}
+Contexte : ${JSON.stringify(context)}
+
+Génère le message de bilan soir pour Telegram.`;
+
+    return callClaude(env, 'claude-haiku-4-5-20251001', system, user, 256);
+  }
 }
 
 export async function generateMorningBrief(
