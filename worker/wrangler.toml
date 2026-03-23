@@ -13,7 +13,8 @@ id = "efc639a1d6d44adfb0b7ef5552ee9740"
 crons = [
   "30 7 * * *",   # 9h30 Paris (UTC+2 summer) — morning brief
   "0 11 * * *",   # 13h Paris — check-in mi-journée
-  "0 16 * * *"    # 18h Paris — bilan soir
+  "0 16 * * *",   # 18h Paris — bilan soir
+  "0 20 * * *"    # 22h Paris — fallback bilan fin de journée
 ]
 
 # Secrets (set via: wrangler secret put SECRET_NAME)

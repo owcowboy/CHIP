@@ -88,6 +88,7 @@ export async function handleDayEndReply(
   await Promise.all([
     invalidate(env, KEYS.tasks),
     invalidate(env, BILAN_STATE_KEY),
+    markBilanDoneToday(env),
   ]);
 
   await sendTelegram(env, `${synthesis.message}\n\n✅ Bilan enregistré dans Notion.`);
@@ -95,4 +96,17 @@ export async function handleDayEndReply(
 
 export async function getBilanState(env: Env): Promise<BilanState | null> {
   return getCached<BilanState>(env, BILAN_STATE_KEY);
+}
+
+function todayDoneKey(): string {
+  return `bilan:done:${new Date().toISOString().split('T')[0]}`;
+}
+
+export async function isBilanDoneToday(env: Env): Promise<boolean> {
+  const val = await getCached<boolean>(env, todayDoneKey());
+  return val === true;
+}
+
+async function markBilanDoneToday(env: Env): Promise<void> {
+  await setCached(env, todayDoneKey(), true, 60 * 60 * 26); // expire après 26h
 }

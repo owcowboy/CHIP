@@ -3,7 +3,7 @@ import { handlePlanning } from './routes/planning';
 import { handleChat } from './routes/chat';
 import { handleMorning } from './routes/morning';
 import { handleTelegramWebhook } from './routes/telegram';
-import { handleDayEnd } from './routes/day-end';
+import { handleDayEnd, isBilanDoneToday } from './routes/day-end';
 
 export interface Env {
   CHIP_KV: KVNamespace;
@@ -86,6 +86,12 @@ export default {
       const [tasks, context] = await Promise.all([fetchTasks(env), fetchContext(env)]);
       const message = await generateCheckIn(env, tasks, context, 'evening');
       await sendTelegram(env, message);
+    } else if (hour === 20) {
+      // 22h Paris — fallback bilan fin de journée (si pas encore fait)
+      const done = await isBilanDoneToday(env);
+      if (!done) {
+        await handleDayEnd(env);
+      }
     }
   },
 };
