@@ -95,6 +95,18 @@ const PlanningView = (() => {
     }
     stopTimer();
     render(plan);
+
+    if (plan.length > 0 && plan.every(b => b.done)) {
+      triggerDayEnd();
+    }
+  }
+
+  async function triggerDayEnd() {
+    try {
+      await API.dayEnd();
+    } catch {
+      // best-effort — le cron fallback prendra le relais si ça échoue
+    }
   }
 
   // ---- Timer (timestamp-based) ----

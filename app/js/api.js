@@ -62,5 +62,8 @@ const API = (() => {
     triggerMorning() {
       return _request('/morning', { method: 'POST' });
     },
+    dayEnd() {
+      return _request('/day-end', { method: 'POST' });
+    },
   };
 })();
