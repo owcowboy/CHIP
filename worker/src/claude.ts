@@ -31,8 +31,9 @@ async function callClaude(
     throw new Error(`Claude API error: ${res.status}`);
   }
 
-  const data = await res.json() as { content: Array<{ type: string; text: string }> };
-  return data.content[0]?.text ?? '';
+  const data = await res.json() as { content: Array<{ type: string; text?: string }> };
+  const textBlock = data.content.find(c => c.type === 'text');
+  return textBlock?.text ?? '';
 }
 
 export interface PomodoroBlock {
@@ -120,8 +121,9 @@ Règles :
   });
 
   if (!res.ok) throw new Error(`Claude API error: ${res.status}`);
-  const data = await res.json() as { content: Array<{ type: string; text: string }> };
-  return data.content[0]?.text ?? '';
+  const data = await res.json() as { content: Array<{ type: string; text?: string }> };
+  const textBlock = data.content.find(c => c.type === 'text');
+  return textBlock?.text ?? '';
 }
 
 export type NotionAction =
@@ -135,6 +137,41 @@ export interface ChatResult {
   actions: NotionAction[];
 }
 
+const CHIP_TOOL = {
+  name: 'respond_and_act',
+  description: 'Répond à l\'utilisatrice et exécute des actions Notion si nécessaire.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      message: {
+        type: 'string',
+        description: 'Réponse en français à afficher dans Telegram. Directe, max 3 phrases sauf si planning demandé.',
+      },
+      actions: {
+        type: 'array',
+        description: 'Actions Notion à exécuter. Tableau vide si aucune action.',
+        items: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['create_task', 'mark_done', 'update_context', 'write_log'] },
+            title: { type: 'string' },
+            priority: { type: 'number' },
+            estimatedMinutes: { type: 'number' },
+            project: { type: 'string' },
+            taskId: { type: 'string' },
+            taskTitle: { type: 'string' },
+            key: { type: 'string' },
+            value: { type: 'string' },
+            summary: { type: 'string' },
+          },
+          required: ['type'],
+        },
+      },
+    },
+    required: ['message', 'actions'],
+  },
+};
+
 export async function chatWithActions(
   env: Env,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -146,7 +183,7 @@ export async function chatWithActions(
   ).join('\n');
 
   const system = `Tu es CHIP — assistant personnel de l'utilisatrice. Direct, efficace, sans bullshit.
-Tu gères son Notion automatiquement selon le contexte — sans qu'elle ait besoin de te le demander explicitement.
+Tu gères son Notion automatiquement selon le contexte.
 
 Contexte actuel :
 ${JSON.stringify(context, null, 2)}
@@ -154,20 +191,11 @@ ${JSON.stringify(context, null, 2)}
 Tâches en cours :
 ${taskList || 'Aucune tâche en cours.'}
 
-INSTRUCTIONS :
-- Réponds UNIQUEMENT en JSON valide avec cette structure exacte :
-  {"message": "ta réponse en français", "actions": [...]}
-- "message" : ta réponse à afficher (français, direct, max 3 phrases — sauf si on te demande un programme/planning, là tu peux être plus long)
-- "actions" : tableau d'actions Notion à exécuter (peut être vide [])
-- Déduis les actions par contexte — si elle mentionne une nouvelle tâche, crée-la ; si une tâche est finie, marque-la done ; si elle donne une info sur elle, mets à jour le contexte ; si elle fait un bilan, écris dans le journal.
-- Pour "mark_done" : utilise l'ID exact de la tâche dans la liste ci-dessus. Si tu ne trouves pas l'ID exact, n'inclus pas l'action.
-- Si elle demande un programme ou planning de la journée : génère un planning Pomodoro structuré dans "message" (max 5 blocs, format lisible Telegram avec émojis 🍅), en te basant sur les tâches disponibles ET celles qu'elle mentionne dans la conversation. Crée dans Notion les tâches qu'elle mentionne qui n'existent pas encore.
-
-Types d'actions disponibles :
-{"type":"create_task","title":"...","priority":1,"estimatedMinutes":25,"project":"..."}
-{"type":"mark_done","taskId":"...","taskTitle":"..."}
-{"type":"update_context","key":"...","value":"..."}
-{"type":"write_log","summary":"..."}`;
+Règles :
+- Réponds en français, direct, max 3 phrases — sauf si planning demandé (là tu peux être long)
+- Déduis les actions par contexte : nouvelle tâche → create_task, tâche finie → mark_done, info perso → update_context, bilan → write_log
+- Pour mark_done : utilise l'ID exact de la liste ci-dessus
+- Si planning demandé : génère un planning Pomodoro dans message (max 5 blocs, format Telegram avec 🍅)`;
 
   const res = await fetch(ANTHROPIC_API, {
     method: 'POST',
@@ -181,28 +209,34 @@ Types d'actions disponibles :
       max_tokens: 1024,
       system,
       messages,
+      tools: [CHIP_TOOL],
+      tool_choice: { type: 'tool', name: 'respond_and_act' },
     }),
   });
 
-  if (!res.ok) throw new Error(`Claude API error: ${res.status}`);
-  const data = await res.json() as { content: Array<{ type: string; text: string }> };
-  const raw = data.content[0]?.text ?? '';
-
-  try {
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (match) {
-      const parsed = JSON.parse(match[0]);
-      return {
-        message: parsed.message ?? raw,
-        actions: Array.isArray(parsed.actions) ? parsed.actions : [],
-      };
-    }
-  } catch {
-    console.error('[Claude] Failed to parse chatWithActions JSON:', raw);
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('[Claude] chatWithActions error:', res.status, err);
+    throw new Error(`Claude API error: ${res.status}`);
   }
 
-  // Fallback : réponse brute, aucune action
-  return { message: raw, actions: [] };
+  const data = await res.json() as {
+    content: Array<{ type: string; text?: string; name?: string; input?: { message: string; actions: NotionAction[] } }>;
+  };
+
+  const toolBlock = data.content.find(c => c.type === 'tool_use' && c.name === 'respond_and_act');
+  if (toolBlock?.input) {
+    return {
+      message: toolBlock.input.message ?? '…',
+      actions: Array.isArray(toolBlock.input.actions) ? toolBlock.input.actions : [],
+    };
+  }
+
+  // Fallback si tool_use absent (ne devrait pas arriver avec tool_choice forcé)
+  const textBlock = data.content.find(c => c.type === 'text');
+  const raw = textBlock?.text ?? '';
+  console.error('[Claude] chatWithActions: aucun tool_use reçu, fallback texte brut:', raw);
+  return { message: raw || 'Je n\'ai pas pu générer une réponse.', actions: [] };
 }
 
 export async function generateCheckIn(
