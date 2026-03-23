@@ -91,6 +91,81 @@ export async function markTaskDone(env: Env, taskId: string): Promise<void> {
   });
 }
 
+export async function createTask(
+  env: Env,
+  title: string,
+  priority = 2,
+  estimatedMinutes = 25,
+  project = ''
+): Promise<string> {
+  const res = await fetch('https://api.notion.com/v1/pages', {
+    method: 'POST',
+    headers: notionHeaders(env),
+    body: JSON.stringify({
+      parent: { database_id: env.NOTION_TASKS_DB_ID },
+      properties: {
+        Title: { title: [{ text: { content: title } }] },
+        Status: { select: { name: 'todo' } },
+        Priority: { number: priority },
+        EstimatedMinutes: { number: estimatedMinutes },
+        ...(project ? { Project: { select: { name: project } } } : {}),
+      },
+    }),
+  });
+  const data = await res.json() as { id: string };
+  return data.id;
+}
+
+export async function updateContext(env: Env, key: string, value: string): Promise<void> {
+  // Chercher si la clé existe déjà
+  const res = await fetch(
+    `https://api.notion.com/v1/databases/${env.NOTION_CONTEXT_DB_ID}/query`,
+    {
+      method: 'POST',
+      headers: notionHeaders(env),
+      body: JSON.stringify({
+        filter: { property: 'Key', title: { equals: key } },
+        page_size: 1,
+      }),
+    }
+  );
+  const data = await res.json() as { results: any[] };
+
+  if (data.results.length > 0) {
+    // Mettre à jour la page existante
+    await fetch(`https://api.notion.com/v1/pages/${data.results[0].id}`, {
+      method: 'PATCH',
+      headers: notionHeaders(env),
+      body: JSON.stringify({
+        properties: {
+          Value: { rich_text: [{ text: { content: value } }] },
+        },
+      }),
+    });
+  } else {
+    // Créer une nouvelle entrée
+    await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: notionHeaders(env),
+      body: JSON.stringify({
+        parent: { database_id: env.NOTION_CONTEXT_DB_ID },
+        properties: {
+          Key: { title: [{ text: { content: key } }] },
+          Value: { rich_text: [{ text: { content: value } }] },
+        },
+      }),
+    });
+  }
+}
+
+export async function deleteTask(env: Env, taskId: string): Promise<void> {
+  await fetch(`https://api.notion.com/v1/pages/${taskId}`, {
+    method: 'PATCH',
+    headers: notionHeaders(env),
+    body: JSON.stringify({ archived: true }),
+  });
+}
+
 export async function writeDailyLog(
   env: Env,
   summary: string,

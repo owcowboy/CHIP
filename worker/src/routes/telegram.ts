@@ -1,6 +1,6 @@
 import type { Env } from '../index';
-import { fetchTasks, fetchContext } from '../notion';
-import { chat, generateDailyPlan } from '../claude';
+import { fetchTasks, fetchContext, markTaskDone, createTask, updateContext, deleteTask, writeDailyLog } from '../notion';
+import { chatWithActions, generateDailyPlan, type NotionAction } from '../claude';
 import { getCached, setCached } from '../cache';
 import { sendTelegram } from '../telegram';
 
@@ -82,7 +82,7 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
     return new Response('ok');
   }
 
-  // Texte libre → Claude chat avec historique persisté en KV (24h)
+  // Texte libre → Claude avec actions Notion automatiques
   const [history, tasks, context] = await Promise.all([
     getHistory(env, chatId),
     fetchTasks(env),
@@ -90,12 +90,42 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
   ]);
 
   const updatedHistory: ChatMessage[] = [...history, { role: 'user', content: text }];
-  const reply = await chat(env, updatedHistory, context, tasks);
+  const result = await chatWithActions(env, updatedHistory, context, tasks);
 
+  // Envoyer la réponse + sauvegarder historique en parallèle
   await Promise.all([
-    sendTelegram(env, reply),
-    saveHistory(env, chatId, [...updatedHistory, { role: 'assistant', content: reply }]),
+    sendTelegram(env, result.message),
+    saveHistory(env, chatId, [...updatedHistory, { role: 'assistant', content: result.message }]),
   ]);
 
+  // Exécuter les actions Notion (sans bloquer la réponse)
+  if (result.actions.length > 0) {
+    await Promise.allSettled(result.actions.map(action => executeNotionAction(env, action)));
+    // Invalider le cache des tâches si des tâches ont été modifiées
+    const tasksMutated = result.actions.some(a =>
+      a.type === 'create_task' || a.type === 'mark_done'
+    );
+    if (tasksMutated) {
+      await env.CHIP_KV.delete('tasks');
+    }
+  }
+
   return new Response('ok');
+}
+
+async function executeNotionAction(env: Env, action: NotionAction): Promise<void> {
+  switch (action.type) {
+    case 'create_task':
+      await createTask(env, action.title, action.priority, action.estimatedMinutes, action.project);
+      break;
+    case 'mark_done':
+      await markTaskDone(env, action.taskId);
+      break;
+    case 'update_context':
+      await updateContext(env, action.key, action.value);
+      break;
+    case 'write_log':
+      await writeDailyLog(env, action.summary, 0, '');
+      break;
+  }
 }

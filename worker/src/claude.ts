@@ -124,6 +124,86 @@ Règles :
   return data.content[0]?.text ?? '';
 }
 
+export type NotionAction =
+  | { type: 'create_task'; title: string; priority?: number; estimatedMinutes?: number; project?: string }
+  | { type: 'mark_done'; taskId: string; taskTitle: string }
+  | { type: 'update_context'; key: string; value: string }
+  | { type: 'write_log'; summary: string };
+
+export interface ChatResult {
+  message: string;
+  actions: NotionAction[];
+}
+
+export async function chatWithActions(
+  env: Env,
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  context: Record<string, string>,
+  tasks: NotionTask[]
+): Promise<ChatResult> {
+  const taskList = tasks.slice(0, 10).map(t =>
+    `- [${t.id}] "${t.title}" (priorité ${t.priority}, ${t.estimatedMinutes}min${t.project ? `, projet: ${t.project}` : ''})`
+  ).join('\n');
+
+  const system = `Tu es CHIP — assistant personnel de l'utilisatrice. Direct, efficace, sans bullshit.
+Tu gères son Notion automatiquement selon le contexte — sans qu'elle ait besoin de te le demander explicitement.
+
+Contexte actuel :
+${JSON.stringify(context, null, 2)}
+
+Tâches en cours :
+${taskList || 'Aucune tâche en cours.'}
+
+INSTRUCTIONS :
+- Réponds UNIQUEMENT en JSON valide avec cette structure exacte :
+  {"message": "ta réponse en français", "actions": [...]}
+- "message" : ta réponse à afficher à l'utilisatrice (français, direct, max 3 phrases)
+- "actions" : tableau d'actions Notion à exécuter (peut être vide [])
+- Déduis les actions par contexte — si elle mentionne une nouvelle tâche, crée-la ; si une tâche est finie, marque-la done ; si elle donne une info sur elle, mets à jour le contexte ; si elle fait un bilan, écris dans le journal.
+- Pour "mark_done" : utilise l'ID exact de la tâche dans la liste ci-dessus. Si tu ne trouves pas l'ID exact, n'inclus pas l'action.
+
+Types d'actions disponibles :
+{"type":"create_task","title":"...","priority":1,"estimatedMinutes":25,"project":"..."}
+{"type":"mark_done","taskId":"...","taskTitle":"..."}
+{"type":"update_context","key":"...","value":"..."}
+{"type":"write_log","summary":"..."}`;
+
+  const res = await fetch(ANTHROPIC_API, {
+    method: 'POST',
+    headers: {
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system,
+      messages,
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Claude API error: ${res.status}`);
+  const data = await res.json() as { content: Array<{ type: string; text: string }> };
+  const raw = data.content[0]?.text ?? '';
+
+  try {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      return {
+        message: parsed.message ?? raw,
+        actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+      };
+    }
+  } catch {
+    console.error('[Claude] Failed to parse chatWithActions JSON:', raw);
+  }
+
+  // Fallback : réponse brute, aucune action
+  return { message: raw, actions: [] };
+}
+
 export async function generateMorningBrief(
   env: Env,
   tasks: NotionTask[],
