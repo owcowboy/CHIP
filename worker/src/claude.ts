@@ -305,18 +305,23 @@ Génère le bilan en JSON :
 export async function generateMorningBrief(
   env: Env,
   tasks: NotionTask[],
-  context: Record<string, string>
+  context: Record<string, string>,
+  rolledOver = ''
 ): Promise<string> {
   const system = `Tu es CHIP. Génère un brief matin court et motivant.
 Direct, max 5 lignes, en français.`;
 
+  const rolledOverLine = rolledOver
+    ? `\nTâches reportées d'hier : ${rolledOver}`
+    : '';
+
   const user = `Tâches disponibles : ${tasks.length}
-Top 3 prioritaires : ${tasks.slice(0, 3).map(t => t.title).join(', ')}
+Top 3 prioritaires : ${tasks.slice(0, 3).map(t => t.title).join(', ')}${rolledOverLine}
 Contexte : ${JSON.stringify(context)}
 
 Génère le brief matin pour Telegram. Inclus :
 1. Une micro-tâche de démarrage (quelque chose de 5 min max)
-2. Les 3 tâches du jour
+2. Les 3 tâches du jour${rolledOver ? ' (intègre les tâches reportées)' : ''}
 3. Un mot direct de motivation`;
 
   return callClaude(env, 'claude-haiku-4-5-20251001', system, user, 256);
