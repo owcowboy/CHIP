@@ -1,6 +1,6 @@
 import type { Env } from '../index';
 import { fetchTasks, fetchContext, markTaskDone } from '../notion';
-import { generateDailyPlan } from '../claude';
+import { generateDailyPlan } from '../gemini';
 import { getCached, setCached, invalidate, KEYS } from '../cache';
 
 export async function handlePlanning(request: Request, env: Env): Promise<Response> {

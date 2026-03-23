@@ -18,7 +18,7 @@ crons = [
 ]
 
 # Secrets (set via: wrangler secret put SECRET_NAME)
-# ANTHROPIC_API_KEY
+# GEMINI_API_KEY
 # NOTION_API_KEY
 # NOTION_TASKS_DB_ID
 # NOTION_DAILY_LOG_DB_ID

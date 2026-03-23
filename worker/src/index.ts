@@ -7,7 +7,7 @@ import { handleDayEnd, isBilanDoneToday } from './routes/day-end';
 
 export interface Env {
   CHIP_KV: KVNamespace;
-  ANTHROPIC_API_KEY: string;
+  GEMINI_API_KEY: string;
   NOTION_API_KEY: string;
   NOTION_TASKS_DB_ID: string;
   NOTION_DAILY_LOG_DB_ID: string;
@@ -73,7 +73,7 @@ export default {
     } else if (hour === 11) {
       // 13h Paris — check-in mi-journée intelligent
       const { fetchTasks, fetchContext } = await import('./notion');
-      const { generateCheckIn } = await import('./claude');
+      const { generateCheckIn } = await import('./gemini');
       const { sendTelegram } = await import('./telegram');
       const [tasks, context] = await Promise.all([fetchTasks(env), fetchContext(env)]);
       const message = await generateCheckIn(env, tasks, context, 'midday');
@@ -81,7 +81,7 @@ export default {
     } else if (hour === 16) {
       // 18h Paris — bilan soir intelligent
       const { fetchTasks, fetchContext } = await import('./notion');
-      const { generateCheckIn } = await import('./claude');
+      const { generateCheckIn } = await import('./gemini');
       const { sendTelegram } = await import('./telegram');
       const [tasks, context] = await Promise.all([fetchTasks(env), fetchContext(env)]);
       const message = await generateCheckIn(env, tasks, context, 'evening');

@@ -6,7 +6,7 @@ import {
   writeDailyLogEnriched,
   markTaskRolledOver,
 } from '../notion';
-import { synthesizeDayEnd } from '../claude';
+import { synthesizeDayEnd } from '../gemini';
 import { sendTelegram } from '../telegram';
 import { getCached, setCached, invalidate, KEYS } from '../cache';
 import { getWorkerConfig, cfg } from '../config';

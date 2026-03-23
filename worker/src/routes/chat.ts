@@ -1,6 +1,6 @@
 import type { Env } from '../index';
 import { fetchTasks, fetchContext } from '../notion';
-import { chat } from '../claude';
+import { chat } from '../gemini';
 import { getCached, setCached, KEYS } from '../cache';
 
 interface ChatMessage {
