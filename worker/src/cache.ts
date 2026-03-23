@@ -25,4 +25,5 @@ export const KEYS = {
   tasks: 'cache:tasks',
   context: 'cache:context',
   todayPlan: 'plan:today',
+  workerConfig: 'cache:worker-config',
 };

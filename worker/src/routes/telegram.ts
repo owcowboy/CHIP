@@ -3,6 +3,7 @@ import { fetchTasks, fetchContext, markTaskDone, createTask, updateContext, dele
 import { chatWithActions, generateDailyPlan, type NotionAction } from '../claude';
 import { getCached, setCached } from '../cache';
 import { sendTelegram } from '../telegram';
+import { getBilanState, handleDayEndReply } from './day-end';
 
 interface TelegramMessage {
   chat: { id: number };
@@ -79,6 +80,13 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
       ).join('\n\n');
       await sendTelegram(env, `*Planning du jour :*\n\n${msg}`);
     }
+    return new Response('ok');
+  }
+
+  // Texte libre — vérifier si on est en mode bilan de fin de journée
+  const bilanState = await getBilanState(env);
+  if (bilanState?.active) {
+    await handleDayEndReply(env, text, bilanState);
     return new Response('ok');
   }
 

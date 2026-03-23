@@ -3,6 +3,7 @@ import { handlePlanning } from './routes/planning';
 import { handleChat } from './routes/chat';
 import { handleMorning } from './routes/morning';
 import { handleTelegramWebhook } from './routes/telegram';
+import { handleDayEnd } from './routes/day-end';
 
 export interface Env {
   CHIP_KV: KVNamespace;
@@ -11,6 +12,7 @@ export interface Env {
   NOTION_TASKS_DB_ID: string;
   NOTION_DAILY_LOG_DB_ID: string;
   NOTION_CONTEXT_DB_ID: string;
+  NOTION_WORKER_CONFIG_DB_ID: string;
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_CHAT_ID: string;
 }
@@ -43,6 +45,8 @@ export default {
       response = await handleMorning(env);
     } else if (path === '/telegram' && request.method === 'POST') {
       response = await handleTelegramWebhook(request, env);
+    } else if (path === '/day-end' && request.method === 'POST') {
+      response = await handleDayEnd(env);
     } else {
       response = new Response(JSON.stringify({ error: 'Not found' }), {
         status: 404,

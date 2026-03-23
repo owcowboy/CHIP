@@ -241,6 +241,67 @@ Génère le message de bilan soir pour Telegram.`;
   }
 }
 
+export interface DayEndSynthesis {
+  message: string;
+  summary: string;
+  tasksCompleted: string;
+  tasksRolledOver: string;
+  freeNotes: string;
+  energyLevel: 'Bas' | 'Moyen' | 'Haut';
+}
+
+export async function synthesizeDayEnd(
+  env: Env,
+  userReply: string,
+  tasks: NotionTask[],
+  yesterdayRolledOver: string
+): Promise<DayEndSynthesis> {
+  const done = tasks.filter(t => t.status === 'done');
+  const remaining = tasks.filter(t => t.status !== 'done');
+
+  const system = `Tu es CHIP. L'utilisatrice vient de décrire sa journée.
+Analyse son message et génère un bilan structuré.
+Réponds UNIQUEMENT en JSON valide, sans markdown.`;
+
+  const user = `Tâches marquées "done" aujourd'hui : ${done.map(t => t.title).join(', ') || 'aucune'}
+Tâches encore ouvertes : ${remaining.map(t => t.title).join(', ') || 'aucune'}
+Tâches reportées d'hier : ${yesterdayRolledOver || 'aucune'}
+Message de l'utilisatrice : "${userReply}"
+
+Génère le bilan en JSON :
+{"message":"ta réponse directe (2-3 lignes max)","summary":"résumé objectif (1 phrase)","tasksCompleted":"tâches finies séparées par virgules","tasksRolledOver":"tâches reportées demain séparées par virgules","freeNotes":"notes libres extraites du message","energyLevel":"Bas|Moyen|Haut"}`;
+
+  const raw = await callClaude(env, 'claude-haiku-4-5-20251001', system, user, 512);
+
+  try {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      const validLevels = ['Bas', 'Moyen', 'Haut'];
+      return {
+        message: parsed.message ?? 'Bilan enregistré.',
+        summary: parsed.summary ?? '',
+        tasksCompleted: parsed.tasksCompleted ?? done.map(t => t.title).join(', '),
+        tasksRolledOver: parsed.tasksRolledOver ?? remaining.map(t => t.title).join(', '),
+        freeNotes: parsed.freeNotes ?? userReply,
+        energyLevel: validLevels.includes(parsed.energyLevel) ? parsed.energyLevel : 'Moyen',
+      };
+    }
+  } catch {
+    console.error('[Claude] Failed to parse synthesizeDayEnd JSON:', raw);
+  }
+
+  // Fallback sûr
+  return {
+    message: 'Bilan enregistré.',
+    summary: userReply.slice(0, 200),
+    tasksCompleted: done.map(t => t.title).join(', '),
+    tasksRolledOver: remaining.map(t => t.title).join(', '),
+    freeNotes: userReply,
+    energyLevel: 'Moyen',
+  };
+}
+
 export async function generateMorningBrief(
   env: Env,
   tasks: NotionTask[],

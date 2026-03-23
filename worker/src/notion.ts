@@ -166,6 +166,35 @@ export async function deleteTask(env: Env, taskId: string): Promise<void> {
   });
 }
 
+export async function fetchWorkerConfig(env: Env): Promise<Record<string, string>> {
+  if (!env.NOTION_WORKER_CONFIG_DB_ID) return {};
+
+  const res = await fetch(
+    `https://api.notion.com/v1/databases/${env.NOTION_WORKER_CONFIG_DB_ID}/query`,
+    {
+      method: 'POST',
+      headers: notionHeaders(env),
+      body: JSON.stringify({ page_size: 50 }),
+    }
+  );
+
+  if (!res.ok) {
+    console.error('[Notion] fetchWorkerConfig failed:', res.status, await res.text());
+    return {};
+  }
+
+  const data = await res.json() as { results: any[] };
+  const config: Record<string, string> = {};
+
+  for (const page of data.results) {
+    const key = page.properties?.Key?.title?.[0]?.plain_text;
+    const value = page.properties?.Value?.rich_text?.[0]?.plain_text;
+    if (key && value !== undefined) config[key] = value;
+  }
+
+  return config;
+}
+
 export async function writeDailyLog(
   env: Env,
   summary: string,
@@ -182,6 +211,74 @@ export async function writeDailyLog(
         Summary: { rich_text: [{ text: { content: summary } }] },
         PomodoroCount: { number: pomodoroCount },
         ClaudeInsights: { rich_text: [{ text: { content: insights } }] },
+      },
+    }),
+  });
+}
+
+export async function writeDailyLogEnriched(
+  env: Env,
+  summary: string,
+  pomodoroCount: number,
+  insights: string,
+  tasksCompleted: string,
+  tasksRolledOver: string,
+  freeNotes: string,
+  energyLevel: 'Bas' | 'Moyen' | 'Haut'
+): Promise<void> {
+  await fetch('https://api.notion.com/v1/pages', {
+    method: 'POST',
+    headers: notionHeaders(env),
+    body: JSON.stringify({
+      parent: { database_id: env.NOTION_DAILY_LOG_DB_ID },
+      properties: {
+        Date: { title: [{ text: { content: new Date().toISOString().split('T')[0] } }] },
+        Summary: { rich_text: [{ text: { content: summary } }] },
+        PomodoroCount: { number: pomodoroCount },
+        ClaudeInsights: { rich_text: [{ text: { content: insights } }] },
+        TasksCompleted: { rich_text: [{ text: { content: tasksCompleted } }] },
+        TasksRolledOver: { rich_text: [{ text: { content: tasksRolledOver } }] },
+        FreeNotes: { rich_text: [{ text: { content: freeNotes } }] },
+        EnergyLevel: { select: { name: energyLevel } },
+      },
+    }),
+  });
+}
+
+export async function fetchYesterdayDailyLog(env: Env): Promise<{ tasksRolledOver: string } | null> {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dateStr = yesterday.toISOString().split('T')[0];
+
+  const res = await fetch(
+    `https://api.notion.com/v1/databases/${env.NOTION_DAILY_LOG_DB_ID}/query`,
+    {
+      method: 'POST',
+      headers: notionHeaders(env),
+      body: JSON.stringify({
+        filter: { property: 'Date', title: { equals: dateStr } },
+        page_size: 1,
+      }),
+    }
+  );
+
+  if (!res.ok) return null;
+  const data = await res.json() as { results: any[] };
+  if (data.results.length === 0) return null;
+
+  const page = data.results[0];
+  return {
+    tasksRolledOver: page.properties?.TasksRolledOver?.rich_text?.[0]?.plain_text ?? '',
+  };
+}
+
+export async function markTaskRolledOver(env: Env, taskId: string): Promise<void> {
+  await fetch(`https://api.notion.com/v1/pages/${taskId}`, {
+    method: 'PATCH',
+    headers: notionHeaders(env),
+    body: JSON.stringify({
+      properties: {
+        Status: { select: { name: 'rolled_over' } },
       },
     }),
   });
