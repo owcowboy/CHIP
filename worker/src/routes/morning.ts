@@ -1,6 +1,6 @@
 import type { Env } from '../index';
 import { fetchTasks, fetchContext, fetchYesterdayDailyLog } from '../notion';
-import { generateMorningBrief } from '../gemini';
+import { generateMorningBrief } from '../claude';
 import { sendTelegram } from '../telegram';
 import { setCached, KEYS } from '../cache';
 import { getWorkerConfig, cfg } from '../config';

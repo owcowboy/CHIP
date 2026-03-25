@@ -1,38 +1,39 @@
 import type { Env } from './index';
 import type { NotionTask } from './notion';
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
 
-function geminiUrl(env: Env): string {
-  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`;
-}
-
-type GeminiContent = { role: 'user' | 'model'; parts: Array<{ text: string }> };
-
-async function callGemini(
+async function callClaude(
   env: Env,
+  model: string,
   systemPrompt: string,
   userMessage: string,
   maxTokens = 1024
 ): Promise<string> {
-  const res = await fetch(geminiUrl(env), {
+  const res = await fetch(ANTHROPIC_API, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-      generationConfig: { maxOutputTokens: maxTokens },
+      model,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
     }),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    console.error('[Gemini] API error:', res.status, err);
-    throw new Error(`Gemini API error: ${res.status}`);
+    console.error('[Claude] API error:', res.status, err);
+    throw new Error(`Claude API error: ${res.status}`);
   }
 
-  const data = await res.json() as { candidates: Array<{ content: { parts: Array<{ text?: string }> } }> };
-  return data.candidates[0]?.content?.parts[0]?.text ?? '';
+  const data = await res.json() as { content: Array<{ type: string; text?: string }> };
+  const textBlock = data.content.find(c => c.type === 'text');
+  return textBlock?.text ?? '';
 }
 
 export interface PomodoroBlock {
@@ -70,13 +71,14 @@ Règles :
 Retourne un tableau JSON avec cette structure exacte :
 [{"taskId":"...","taskName":"...","pomodoroCount":2,"estimatedMinutes":50,"priority":1,"notes":"..."}]`;
 
-  const raw = await callGemini(env, system, user, 512);
+  const raw = await callClaude(env, 'claude-haiku-4-5-20251001', system, user, 512);
 
   try {
+    // Extract JSON if wrapped in markdown code blocks
     const match = raw.match(/\[[\s\S]*\]/);
     return match ? JSON.parse(match[0]) : [];
   } catch {
-    console.error('[Gemini] Failed to parse planning JSON:', raw);
+    console.error('[Claude] Failed to parse planning JSON:', raw);
     return [];
   }
 }
@@ -103,25 +105,25 @@ Règles :
 - Si elle demande à modifier le planning, propose un JSON mis à jour
 - Si elle dit qu'une tâche est finie, confirme et mets à jour`;
 
-  // Convert messages to Gemini format (assistant → model)
-  const contents: GeminiContent[] = messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }));
-
-  const res = await fetch(geminiUrl(env), {
+  const res = await fetch(ANTHROPIC_API, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents,
-      generationConfig: { maxOutputTokens: 512 },
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      system,
+      messages,
     }),
   });
 
-  if (!res.ok) throw new Error(`Gemini API error: ${res.status}`);
-  const data = await res.json() as { candidates: Array<{ content: { parts: Array<{ text?: string }> } }> };
-  return data.candidates[0]?.content?.parts[0]?.text ?? '';
+  if (!res.ok) throw new Error(`Claude API error: ${res.status}`);
+  const data = await res.json() as { content: Array<{ type: string; text?: string }> };
+  const textBlock = data.content.find(c => c.type === 'text');
+  return textBlock?.text ?? '';
 }
 
 export type NotionAction =
@@ -135,11 +137,11 @@ export interface ChatResult {
   actions: NotionAction[];
 }
 
-const CHIP_FUNCTION = {
+const CHIP_TOOL = {
   name: 'respond_and_act',
-  description: "Répond à l'utilisatrice et exécute des actions Notion si nécessaire.",
-  parameters: {
-    type: 'object',
+  description: 'Répond à l\'utilisatrice et exécute des actions Notion si nécessaire.',
+  input_schema: {
+    type: 'object' as const,
     properties: {
       message: {
         type: 'string',
@@ -195,55 +197,46 @@ Règles :
 - Pour mark_done : utilise l'ID exact de la liste ci-dessus
 - Si planning demandé : génère un planning Pomodoro dans message (max 5 blocs, format Telegram avec 🍅)`;
 
-  const contents: GeminiContent[] = messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }));
-
-  const res = await fetch(geminiUrl(env), {
+  const res = await fetch(ANTHROPIC_API, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents,
-      tools: [{ functionDeclarations: [CHIP_FUNCTION] }],
-      toolConfig: {
-        functionCallingConfig: { mode: 'ANY', allowedFunctionNames: ['respond_and_act'] },
-      },
-      generationConfig: { maxOutputTokens: 1024 },
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system,
+      messages,
+      tools: [CHIP_TOOL],
+      tool_choice: { type: 'tool', name: 'respond_and_act' },
     }),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    console.error('[Gemini] chatWithActions error:', res.status, err);
-    throw new Error(`Gemini API error: ${res.status}`);
+    console.error('[Claude] chatWithActions error:', res.status, err);
+    throw new Error(`Claude API error: ${res.status}`);
   }
 
   const data = await res.json() as {
-    candidates: Array<{
-      content: {
-        parts: Array<{
-          text?: string;
-          functionCall?: { name: string; args: { message: string; actions: NotionAction[] } };
-        }>;
-      };
-    }>;
+    content: Array<{ type: string; text?: string; name?: string; input?: { message: string; actions: NotionAction[] } }>;
   };
 
-  const parts = data.candidates[0]?.content?.parts ?? [];
-  const fnCall = parts.find(p => p.functionCall?.name === 'respond_and_act');
-  if (fnCall?.functionCall) {
+  const toolBlock = data.content.find(c => c.type === 'tool_use' && c.name === 'respond_and_act');
+  if (toolBlock?.input) {
     return {
-      message: fnCall.functionCall.args.message ?? '…',
-      actions: Array.isArray(fnCall.functionCall.args.actions) ? fnCall.functionCall.args.actions : [],
+      message: toolBlock.input.message ?? '…',
+      actions: Array.isArray(toolBlock.input.actions) ? toolBlock.input.actions : [],
     };
   }
 
-  // Fallback si function call absent
-  const raw = parts.find(p => p.text)?.text ?? '';
-  console.error('[Gemini] chatWithActions: aucun functionCall reçu, fallback texte brut:', raw);
-  return { message: raw || "Je n'ai pas pu générer une réponse.", actions: [] };
+  // Fallback si tool_use absent (ne devrait pas arriver avec tool_choice forcé)
+  const textBlock = data.content.find(c => c.type === 'text');
+  const raw = textBlock?.text ?? '';
+  console.error('[Claude] chatWithActions: aucun tool_use reçu, fallback texte brut:', raw);
+  return { message: raw || 'Je n\'ai pas pu générer une réponse.', actions: [] };
 }
 
 export async function generateCheckIn(
@@ -252,6 +245,7 @@ export async function generateCheckIn(
   context: Record<string, string>,
   type: 'midday' | 'evening'
 ): Promise<string> {
+  const done = tasks.filter(t => t.status === 'done');
   const remaining = tasks.filter(t => t.status !== 'done');
   const next = remaining[0];
 
@@ -266,7 +260,7 @@ Contexte : ${JSON.stringify(context)}
 
 Génère le message de check-in mi-journée pour Telegram.`;
 
-    return callGemini(env, system, user, 200);
+    return callClaude(env, 'claude-haiku-4-5-20251001', system, user, 200);
   } else {
     const system = `Tu es CHIP. Bilan de fin de journée, direct (max 4 lignes).
 Tu résumes ce qui a été fait, ce qui reste, et tu poses une question sur demain.
@@ -277,7 +271,7 @@ Contexte : ${JSON.stringify(context)}
 
 Génère le message de bilan soir pour Telegram.`;
 
-    return callGemini(env, system, user, 256);
+    return callClaude(env, 'claude-haiku-4-5-20251001', system, user, 256);
   }
 }
 
@@ -311,7 +305,7 @@ Message de l'utilisatrice : "${userReply}"
 Génère le bilan en JSON :
 {"message":"ta réponse directe (2-3 lignes max)","summary":"résumé objectif (1 phrase)","tasksCompleted":"tâches finies séparées par virgules","tasksRolledOver":"tâches reportées demain séparées par virgules","freeNotes":"notes libres extraites du message","energyLevel":"Bas|Moyen|Haut"}`;
 
-  const raw = await callGemini(env, system, user, 512);
+  const raw = await callClaude(env, 'claude-haiku-4-5-20251001', system, user, 512);
 
   try {
     const match = raw.match(/\{[\s\S]*\}/);
@@ -328,9 +322,10 @@ Génère le bilan en JSON :
       };
     }
   } catch {
-    console.error('[Gemini] Failed to parse synthesizeDayEnd JSON:', raw);
+    console.error('[Claude] Failed to parse synthesizeDayEnd JSON:', raw);
   }
 
+  // Fallback sûr
   return {
     message: 'Bilan enregistré.',
     summary: userReply.slice(0, 200),
@@ -363,5 +358,5 @@ Génère le brief matin pour Telegram. Inclus :
 2. Les 3 tâches du jour${rolledOver ? ' (intègre les tâches reportées)' : ''}
 3. Un mot direct de motivation`;
 
-  return callGemini(env, system, user, 256);
+  return callClaude(env, 'claude-haiku-4-5-20251001', system, user, 256);
 }
